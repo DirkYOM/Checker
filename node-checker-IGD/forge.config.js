@@ -19,24 +19,24 @@ module.exports = {
   rebuildConfig: {},
   makers: [
     {
-      name: '@electron-forge/maker-squirrel',
+      name: '@electron-forge/maker-wix',
+      platforms: ['win32'],
       config: {
-        name: 'YOM-Node-Inspector',
-        authors: 'YOM',
-        exe: 'YOM-Node-Inspector.exe',
-        setupIcon: path.join(__dirname, 'assets', 'yom-icon.ico'),
-        setupExe: 'YOM-Node-Inspector-Setup.exe',
-        iconUrl: 'https://raw.githubusercontent.com/YOM-network/node-checker/main/assets/yom-icon.ico',
-        noMsi: true,
-        createDesktopShortcut: true,
-        shortcutName: 'YOM Node Inspector',
-        loadingGif: undefined,
-        setupExeConfig: {
-          setupIcon: path.join(__dirname, 'assets', 'yom-icon.ico'),
-          iconUrl: 'https://raw.githubusercontent.com/YOM-network/node-checker/main/assets/yom-icon.ico'
-        }
-      },
-      platforms: ['win32']
+        name: 'YOM-Node-Inspector', // From existing packagerConfig.executableName or Squirrel config
+        manufacturer: 'YOM', // From existing Squirrel config
+        description: 'YOM Node Inspector app', // From package.json or existing Squirrel config
+        exe: 'YOM-Node-Inspector.exe', // From packagerConfig.executableName
+        icon: path.join(__dirname, 'assets', 'yom-icon.ico'), // From packagerConfig.icon
+        language: 1033, // English - United States
+        ui: {
+          chooseDirectory: true,
+          // It's good practice to also define a EULA, but we don't have one provided.
+          // Example: wixTemplate: path.join(__dirname, 'wix-template.xml') // if custom template is needed
+        },
+        // Consider adding a persistent upgradeCode (UUID) in the future for better update management.
+        // For now, let it auto-generate. Example: upgradeCode: 'YOUR-GUID-HERE'
+        // Desktop shortcut should be created by default with electron-wix-msi.
+      }
     },
     {
       name: '@electron-forge/maker-zip',

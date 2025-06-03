@@ -543,6 +543,33 @@
                     </div>
                 </div>
                 
+                <!-- Traceroute Section -->
+                <div id="traceroute-section" class="report-section">
+                    <div class="section-title">
+                        <!-- Placeholder for icon, will be updated by JS -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="16 18 22 12 16 6"></polyline>
+                            <polyline points="8 6 2 12 8 18"></polyline>
+                        </svg>
+                        <h3>Traceroute Diagnostics</h3>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Target Host:</div>
+                        <div id="traceroute-target" class="detail-value">Not run yet</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Status:</div>
+                        <div id="traceroute-status" class="detail-value">Pending</div>
+                    </div>
+                    <div class="detail-item" style="flex-direction: column; align-items: flex-start;">
+                        <div class="detail-label" style="width: 100%;">Full Trace:</div>
+                        <pre id="traceroute-output" style="width: 100%; background-color: #0a0a0a; padding: 10px; border-radius: 4px; margin-top: 5px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;"></pre>
+                    </div>
+                    <div id="traceroute-recommendation" class="recommendation" style="display: none;">
+                        Traceroute information.
+                    </div>
+                </div>
+
                <!-- Action Buttons -->
 <div class="buttons-container">
     <button class="secondary-btn" style="padding: 15px 30px; font-size: 18px; font-weight: bold;" onclick="quitApp()">QUIT</button>
@@ -637,16 +664,131 @@
             showStage('stage-checking');
             
             // Run the actual checks with visual feedback
-            runChecks().then(() => {
-                // When all checks are complete, show results
-                showStage('stage-results');
-            });
+            runChecks(); // Removed .then here as results are shown within runChecks or after async traceroute
         }
 
         function quitApp() {
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send('quit-app');
-}
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.send('quit-app');
+        }
+
+        function updateSectionStatus(sectionId, status, recommendationText = null) {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+
+            const titleIconSvg = section.querySelector('.section-title svg');
+            const recommendationDiv = document.getElementById(sectionId.replace('-section', '-recommendation'));
+
+            section.classList.remove('section-compatible', 'section-warning', 'section-incompatible', 'section-progress', 'section-pending');
+            let iconHtml = '';
+            let sectionClass = '';
+
+            if (status === 'done' || status === 'compatible') {
+                iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00FF90" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+                sectionClass = 'section-compatible';
+            } else if (status === 'warning') {
+                iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+                sectionClass = 'section-warning';
+            } else if (status === 'error' || status === 'incompatible') {
+                iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+                sectionClass = 'section-incompatible';
+            } else if (status === 'progress') {
+                 iconHtml = `<div class="spinner" style="width:24px; height:24px; border-width:3px; margin-right:0;"></div>`;
+                 sectionClass = 'section-progress';
+            } else if (status === 'pending') {
+                iconHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`; // Placeholder icon
+                sectionClass = 'section-pending'; // Optional: for specific pending styles
+            }
+
+
+            if (titleIconSvg && iconHtml) titleIconSvg.outerHTML = iconHtml;
+            if (sectionClass) section.classList.add(sectionClass);
+
+            if (recommendationDiv) {
+                if (recommendationText) {
+                    recommendationDiv.textContent = recommendationText;
+                    recommendationDiv.style.display = 'block';
+                } else {
+                    recommendationDiv.style.display = 'none';
+                }
+            }
+        }
+
+        async function initiateAndHandleTraceroute(targetHost) {
+            document.getElementById('traceroute-target').textContent = targetHost;
+            document.getElementById('traceroute-status').textContent = 'Starting...';
+            document.getElementById('traceroute-output').textContent = '';
+            updateSectionStatus('traceroute-section', 'progress');
+            let fullTracerouteLog = `Traceroute to ${targetHost}:\n`;
+            document.getElementById('traceroute-output').textContent = fullTracerouteLog;
+
+            return new Promise(async (resolve, reject) => {
+                ipcRenderer.once('traceroute-pid', (event, { pid }) => {
+                    console.log('Traceroute PID:', pid);
+                    document.getElementById('traceroute-status').textContent = 'In Progress...';
+                });
+                ipcRenderer.once('traceroute-destination', (event, { destination }) => {
+                    document.getElementById('traceroute-target').textContent = `${targetHost} (${destination})`;
+                });
+
+                const hopListener = (event, { hop }) => {
+                    const hopLine = `Hop ${String(hop.hop || '').padEnd(3)}: ${String(hop.ip || '*').padEnd(16)} RTT: ${String(hop.rtt1 || '').padEnd(10)}\n`;
+                    document.getElementById('traceroute-output').textContent += hopLine;
+                    fullTracerouteLog += hopLine;
+                };
+                ipcRenderer.on('traceroute-hop', hopListener);
+
+                ipcRenderer.once('traceroute-close', (event, { code }) => {
+                    document.getElementById('traceroute-status').textContent = `Completed (code: ${code})`;
+                    window.checkResults = window.checkResults || {};
+                    window.checkResults.tracerouteLog = fullTracerouteLog;
+                    updateSectionStatus('traceroute-section', code === 0 ? 'done' : 'warning', code === 0 ? "Traceroute completed successfully." : 'Traceroute completed with non-zero exit code, check trace for details.');
+                    ipcRenderer.removeListener('traceroute-hop', hopListener);
+                    resolve();
+                });
+
+                ipcRenderer.once('traceroute-error', (event, { error }) => {
+                    const userFriendlyError = `Traceroute failed: ${error.message}. Please check the host, your internet connection, and firewall settings.\n`;
+                    document.getElementById('traceroute-status').textContent = 'Failed';
+                    document.getElementById('traceroute-output').textContent += userFriendlyError;
+                    fullTracerouteLog += userFriendlyError; // Add user-friendly message to log as well
+                    window.checkResults = window.checkResults || {};
+                    window.checkResults.tracerouteLog = fullTracerouteLog;
+                    window.checkResults.tracerouteError = error.message; // Keep original error for detailed log
+                    updateSectionStatus('traceroute-section', 'error', userFriendlyError);
+                    ipcRenderer.removeListener('traceroute-hop', hopListener);
+                    console.error("Traceroute internal error:", error); // Log original error for dev console
+                    reject(new Error(error.message)); // Reject with original error message
+                });
+
+                try {
+                    const result = await ipcRenderer.invoke('perform-traceroute', targetHost);
+                    if (!result.success) {
+                        const userFriendlyError = `Failed to start traceroute: ${result.error}. Please ensure the application is functioning correctly.\n`;
+                        document.getElementById('traceroute-status').textContent = 'Initiation Failed';
+                        document.getElementById('traceroute-output').textContent += userFriendlyError;
+                        fullTracerouteLog += userFriendlyError;
+                        window.checkResults = window.checkResults || {};
+                        window.checkResults.tracerouteLog = fullTracerouteLog;
+                        window.checkResults.tracerouteError = result.error; // Store original error
+                        updateSectionStatus('traceroute-section', 'error', userFriendlyError);
+                        ipcRenderer.removeListener('traceroute-hop', hopListener);
+                        reject(new Error(result.error));
+                    }
+                } catch (invokeError) {
+                    const userFriendlyError = `Error starting traceroute (IPC): ${invokeError.message}. Please try again.\n`;
+                    document.getElementById('traceroute-status').textContent = 'IPC Error';
+                    document.getElementById('traceroute-output').textContent += userFriendlyError;
+                    fullTracerouteLog += userFriendlyError;
+                    window.checkResults = window.checkResults || {};
+                    window.checkResults.tracerouteLog = fullTracerouteLog;
+                    window.checkResults.tracerouteError = invokeError.message; // Store original error
+                    updateSectionStatus('traceroute-section', 'error', userFriendlyError);
+                    ipcRenderer.removeListener('traceroute-hop', hopListener);
+                    reject(invokeError);
+                }
+            });
+        }
         
         // Run all compatibility checks sequentially with UI updates
         async function runChecks() {
@@ -680,13 +822,36 @@
                 osInfo,
                 upnpInfo,
                 partitionStyle
+                // Traceroute results are added to window.checkResults by initiateAndHandleTraceroute callbacks
             };
             
-            // Generate the report card
+            // Generate the report card - this sets up the static parts
             generateReport(window.checkResults);
             
-            // Wait a moment before showing results
-            await new Promise(r => setTimeout(r, 1000));
+            // Show the results page, traceroute will populate its section live
+            showStage('stage-results');
+
+            // Initiate Traceroute after other checks and after results page is shown
+            // const tracerouteTargetHost = 'google.com'; // This was the old placeholder
+            let tracerouteTargetHost = 'google.com'; // Default fallback
+
+            try {
+                const targets = await ipcRenderer.invoke('get-traceroute-targets');
+                if (targets && targets.length > 0) {
+                    tracerouteTargetHost = targets[0]; // Use the first target
+                    console.log(`Using first configured target for traceroute: ${tracerouteTargetHost}`);
+                } else {
+                    console.warn('No traceroute targets configured or returned from main process, using fallback:', tracerouteTargetHost);
+                }
+            } catch (err) {
+                console.error('Failed to get traceroute targets, using fallback:', tracerouteTargetHost, err);
+            }
+
+            initiateAndHandleTraceroute(tracerouteTargetHost)
+                .then(() => console.log("Traceroute handling process completed or running asynchronously."))
+                .catch(err => console.error("Traceroute handling failed to initiate or error during async process:", err));
+
+            // No need for the final timeout here as results are shown before traceroute fully completes.
         }
         
         // Update the visual status of a check item
@@ -771,90 +936,68 @@
             resultIp.textContent = results.publicIp || 'Not detected';
             
             // UPnP Result - Updated with new status logic
-            let upnpStatus = 'Disabled';
-            let upnpClass = 'value-incompatible';
-            let upnpIcon = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="15" y1="9" x2="9" y2="15"></line>
-                    <line x1="9" y1="9" x2="15" y2="15"></line>
-                </svg>
-            `;
+            let upnpStatus = 'Disabled'; // Default
+            let upnpClass = 'value-incompatible'; // Default
+            let upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`; // Default Incompatible Icon
+            let currentNetworkSectionStatus = 'incompatible'; // For updateSectionStatus
+            let recommendationMsg = 'We recommend enabling UPnP in your router settings for optimal performance.'; // Default
 
             if (results.upnpInfo) {
-                if (results.upnpInfo.igdDetected) {
-                    // UPnP device/router is detected
+                if (results.upnpInfo.platform === 'linux' && results.upnpInfo.status === 'MISSING_DEPENDENCY') {
+                    upnpStatus = 'miniupnpc Not Found';
+                    upnpClass = 'value-warning';
+                    upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`; // Warning Icon
+                    currentNetworkSectionStatus = 'warning';
+                    recommendationMsg = results.upnpInfo.message; // Use message from linux-checks.js
+                    warningCount++;
+                } else if (results.upnpInfo.igdDetected) {
                     if (results.upnpInfo.status === 'PASS') {
                         upnpStatus = 'Fully Enabled';
                         upnpClass = 'value-compatible';
-                        upnpIcon = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00FF90" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                            </svg>
-                        `;
-                        networkSection.className = 'report-section section-compatible';
-                        networkRecommendation.style.display = 'none';
+                        upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00FF90" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`; // Compatible Icon
+                        currentNetworkSectionStatus = 'compatible';
+                        recommendationMsg = null; // No recommendation needed
                         compatibleCount++;
                     } else if (results.upnpInfo.status === 'PARTIAL_PASS') {
                         upnpStatus = 'Partially Enabled';
                         upnpClass = 'value-warning';
-                        upnpIcon = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                <line x1="12" y1="9" x2="12" y2="13"></line>
-                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                            </svg>
-                        `;
-                        networkSection.className = 'report-section section-warning';
-                        networkRecommendation.textContent = 'UPnP is detected but has limited functionality. Some router settings may need adjustment.';
-                        networkRecommendation.style.display = 'block';
+                        upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`; // Warning Icon
+                        currentNetworkSectionStatus = 'warning';
+                        recommendationMsg = 'UPnP is detected but has limited functionality. Some router settings may need adjustment.';
                         warningCount++;
-                    } else {
-                        // IGD detected but operations failed
+                    } else { // FAIL or other non-PASS states with IGD detected
                         upnpStatus = 'Limited Access';
-                        upnpClass = 'value-warning';
-                        upnpIcon = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                <line x1="12" y1="9" x2="12" y2="13"></line>
-                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                            </svg>
-                        `;
-                        networkSection.className = 'report-section section-warning';
-                        networkRecommendation.textContent = 'UPnP is detected but port mapping operations failed. Check router settings.';
-                        networkRecommendation.style.display = 'block';
+                        upnpClass = 'value-warning'; // Treat as warning if IGD is there but not fully functional
+                        upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`; // Warning Icon
+                        currentNetworkSectionStatus = 'warning';
+                        recommendationMsg = 'UPnP is detected but port mapping operations failed. Check router settings.';
                         warningCount++;
                     }
-                } else {
-                    // No IGD detected
-                    upnpStatus = 'Disabled';
+                } else { // No IGD detected (and not MISSING_DEPENDENCY)
+                    upnpStatus = results.upnpInfo.details?.error || 'Disabled / Not Detected';
                     upnpClass = 'value-incompatible';
-                    networkSection.className = 'report-section section-incompatible';
-                    networkRecommendation.textContent = 'We recommend enabling UPnP in your router settings for optimal performance.';
-                    networkRecommendation.style.display = 'block';
+                    upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`; // Incompatible Icon
+                    currentNetworkSectionStatus = 'incompatible';
+                    recommendationMsg = results.upnpInfo.recommendations?.join(' ') || 'UPnP not detected or not functional. Enable in router.';
                     incompatibleCount++;
                 }
-            } else {
-                // No UPnP information available
+            } else { // upnpInfo is null or undefined
                 upnpStatus = 'Unknown';
                 upnpClass = 'value-warning';
-                upnpIcon = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                `;
-                networkSection.className = 'report-section section-warning';
-                networkRecommendation.textContent = 'Unable to determine UPnP status. Please check your router settings.';
-                networkRecommendation.style.display = 'block';
+                upnpIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="orange" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`; // Warning Icon
+                currentNetworkSectionStatus = 'warning';
+                recommendationMsg = 'Could not determine UPnP status.';
                 warningCount++;
             }
 
             resultUpnp.textContent = upnpStatus;
             resultUpnp.className = `detail-value ${upnpClass}`;
-            networkSection.querySelector('.section-title svg').outerHTML = upnpIcon;
+            // Instead of direct DOM manipulation for section class and icon:
+            updateSectionStatus('network-section', currentNetworkSectionStatus, recommendationMsg);
+            // Ensure the icon is updated by updateSectionStatus or do it here if preferred:
+            if (networkSection.querySelector('.section-title svg')) {
+                 networkSection.querySelector('.section-title svg').outerHTML = upnpIcon;
+            }
             
             // 2. Hardware Section
             const hardwareSection = document.getElementById('hardware-section');
@@ -978,6 +1121,12 @@
             storageSection.querySelector('.section-title svg').outerHTML = storageIcon;
             
             // No need for overall status banner as requested
+
+            // Initialize Traceroute section display
+            document.getElementById('traceroute-target').textContent = 'Not run yet';
+            document.getElementById('traceroute-status').textContent = 'Pending';
+            document.getElementById('traceroute-output').textContent = '';
+            updateSectionStatus('traceroute-section', 'pending', 'Traceroute will run automatically after other checks.');
         }
         
         // Send buy request function
@@ -1014,6 +1163,8 @@
                     gpu: document.getElementById('result-gpu').textContent,
                     os: document.getElementById('result-os').textContent,
                     partitionStyle: document.getElementById('result-partition').textContent,
+                    tracerouteLog: window.checkResults?.tracerouteLog || "Traceroute not run or completed.",
+                    tracerouteError: window.checkResults?.tracerouteError || null,
                     // Include the raw check results if available
                     rawResults: window.checkResults || {}
                 };

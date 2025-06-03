@@ -12,78 +12,25 @@ const commandExists = require('command-exists').sync;
  * @returns {Promise<boolean>} True if upnpc is available
  */
 async function checkLinuxUPnPToolAvailability() {
-    logger.info('Checking if UPnP tool is available on Linux');
-    
-    // Check if miniupnpc is installed on Linux
+    logger.info('Checking if upnpc command is available on Linux...');
     try {
+        // commandExists.sync will throw an error if the command is not found with some configurations,
+        // or return false. We ensure it's always boolean.
         const hasUpnpc = commandExists('upnpc');
         if (hasUpnpc) {
-            logger.info('upnpc is already installed');
+            logger.info('upnpc command found.');
             return true;
-        }
-    } catch (err) {
-        // Not installed, try to install it
-        logger.warn('upnpc not found, attempting to install');
-        
-        try {
-            // Try to detect the Linux distribution
-            const { stdout: lsbOutput } = await execPromise('lsb_release -a || cat /etc/os-release');
-            logger.debug(`Distribution info: ${lsbOutput}`);
-            
-            if (lsbOutput.toLowerCase().includes('ubuntu') || 
-                lsbOutput.toLowerCase().includes('debian')) {
-                // For Ubuntu/Debian
-                logger.info('Detected Ubuntu/Debian, using apt');
-                
-                // Note: This requires sudo permissions
-                logger.debug('Running: sudo apt-get update && sudo apt-get install -y miniupnpc');
-                await execPromise('sudo apt-get update && sudo apt-get install -y miniupnpc');
-                
-                // Verify installation
-                try {
-                    await execPromise('which upnpc');
-                    logger.info('upnpc successfully installed');
-                    return true;
-                } catch (e) {
-                    logger.error(`Installation verification failed: ${e.message}`);
-                    return false;
-                }
-            } else if (lsbOutput.toLowerCase().includes('fedora') || 
-                       lsbOutput.toLowerCase().includes('centos') || 
-                       lsbOutput.toLowerCase().includes('rhel')) {
-                // For Fedora/CentOS/RHEL
-                logger.info('Detected Fedora/CentOS/RHEL, using dnf/yum');
-                
-                // Try dnf first (newer), fall back to yum
-                try {
-                    await execPromise('which dnf');
-                    logger.debug('Running: sudo dnf install -y miniupnpc');
-                    await execPromise('sudo dnf install -y miniupnpc');
-                } catch (e) {
-                    logger.warn('DNF not found or failed, trying yum');
-                    await execPromise('sudo yum install -y miniupnpc');
-                }
-                
-                // Verify installation
-                try {
-                    await execPromise('which upnpc');
-                    logger.info('upnpc successfully installed');
-                    return true;
-                } catch (e) {
-                    logger.error(`Installation verification failed: ${e.message}`);
-                    return false;
-                }
-            } else {
-                logger.warn('Unsupported Linux distribution, cannot auto-install');
-                return false;
-            }
-        } catch (error) {
-            logger.error(`Failed to install upnpc: ${error.message}`);
+        } else {
+            logger.warn('upnpc command not found.');
             return false;
         }
+    } catch (err) {
+        // Handle cases where commandExists might throw (e.g. permission issues or unusual PATH)
+        logger.error(`Error checking for upnpc command: ${err.message}`);
+        // It's safer to assume it's not available if commandExists itself errors.
+        logger.warn('upnpc command not found due to error during check.');
+        return false;
     }
-    
-    return false;
 }
 
 /**
@@ -418,47 +365,66 @@ function formatLinuxPartitionOutput(output, isFdisk = false) {
  */
 async function checkLinuxUPnPComprehensive() {
     logger.info('Starting comprehensive Linux UPnP check');
+
+    const isUpnpcAvailable = await checkLinuxUPnPToolAvailability();
+
+    if (!isUpnpcAvailable) {
+        logger.warn('upnpc tool is not available. Returning MISSING_DEPENDENCY status.');
+        return {
+            igdDetected: false,
+            status: 'MISSING_DEPENDENCY',
+            toolName: 'miniupnpc',
+            message: 'miniupnpc (which provides the upnpc command) is not installed. Please install it using your system package manager (e.g., sudo apt install miniupnpc or sudo dnf install miniupnpc).',
+            platform: 'linux',
+            recommendations: ['Install miniupnpc to enable command-line UPnP checks.'],
+            details: { error: 'upnpc command not found.' }
+        };
+    }
     
     try {
-        // First try library-based approach
+        // First try library-based approach - this can serve as a fallback or complementary check
         const libraryResult = await checkUPnPWithLibraryLinux();
         logger.info(`Library UPnP check result: ${libraryResult.status}`);
         
-        // Try Linux-specific approach if available
-        const isToolAvailable = await checkLinuxUPnPToolAvailability();
+        // Since upnpc is available, proceed with native tool check
+        const nativeResult = await checkUPnPLinux();
+        logger.info(`Native Linux UPnP check result: ${nativeResult.status}`);
         
-        if (isToolAvailable) {
-            const nativeResult = await checkUPnPLinux();
-            logger.info(`Native Linux UPnP check result: ${nativeResult.status}`);
-            
-            // Combine results, preferring native tool results when available
-            const result = {
-                ...libraryResult,
-                ...nativeResult,
-                method: 'native',
-                libraryFallbackAvailable: true,
-                platform: 'linux'
-            };
-            
-            logger.info('Returning combined UPnP check results');
-            return result;
-        }
-        
-        // Return library results if native tool is not available
-        logger.info('Native tool unavailable, returning library results only');
-        return {
-            ...libraryResult,
-            method: 'library',
-            nativeToolAvailable: false,
+        // Combine results. Prioritize nativeResult if it's conclusive (PASS or specific FAIL),
+        // but consider libraryResult if nativeResult is ambiguous or less successful.
+        // For simplicity here, we'll assume nativeResult is more definitive if PASS.
+        // A more sophisticated merge could be done if needed.
+        const combinedStatus = nativeResult.status === 'PASS' ? nativeResult.status :
+                               (libraryResult.status === 'PASS' && nativeResult.status !== 'FAIL' ? libraryResult.status : nativeResult.status);
+
+        const result = {
+            ...libraryResult, // Start with library results as a base
+            ...nativeResult,  // Override with native results where applicable
+            status: combinedStatus, // Use the determined combined status
+            method: 'native_with_library_fallback', // Indicate both were attempted
             platform: 'linux'
         };
+
+        // Ensure details from both are preserved if necessary, or prioritize native.
+        // For example, if nativeResult has more specific error details when it fails:
+        if (nativeResult.status !== 'PASS' && nativeResult.details?.error) {
+            result.details = { ...libraryResult.details, ...nativeResult.details, error: nativeResult.details.error };
+        }
+
+
+        logger.info(`Returning combined UPnP check results, final status: ${result.status}`);
+        return result;
+
     } catch (error) {
-        logger.error(`Comprehensive Linux UPnP check error: ${error.message}`, { stack: error.stack });
+        logger.error(`Comprehensive Linux UPnP check error after tool availability check: ${error.message}`, { stack: error.stack });
+        // This catch is for errors in checkUPnPWithLibraryLinux or checkUPnPLinux after confirming tool presence
         return {
+            igdDetected: false, // Assuming failure at this stage means IGD detection might be unreliable
             status: 'FAIL',
-            error: error.message,
-            details: 'Unexpected error during UPnP check',
-            platform: 'linux'
+            message: `An unexpected error occurred during UPnP checks: ${error.message}`,
+            platform: 'linux',
+            recommendations: ['Review error logs for more details.'],
+            details: { error: error.message }
         };
     }
 }

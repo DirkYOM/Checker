@@ -9,60 +9,9 @@ const { sendSystemInfoEmail } = require('./utils/send-email');
 const logger = require('./logger');
 logger.info('Application starting up');
 
-// Handle Squirrel events
-if (process.platform === 'win32') {
-    const squirrelCommand = process.argv[1];
-    
-    if (squirrelCommand) {
-        logger.info(`Received Squirrel command: ${squirrelCommand}`);
-        
-        switch (squirrelCommand) {
-            case '--squirrel-install':
-            case '--squirrel-updated':
-                // Log installation
-                logger.logInstallation({
-                    event: squirrelCommand === '--squirrel-install' ? 'install' : 'update',
-                    installPath: app.getAppPath(),
-                    desktopShortcut: 'Creating desktop shortcut'
-                });
-                
-                // Create shortcuts
-                try {
-                    const updateDotExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
-                    const target = path.basename(process.execPath);
-                    
-                    require('child_process').spawn(updateDotExe, [
-                        '--createShortcut=' + target,
-                        '--shortcut-locations=Desktop,StartMenu'
-                    ], { detached: true });
-                    
-                    logger.info('Shortcuts created successfully');
-                } catch (error) {
-                    logger.error(`Error creating shortcuts: ${error.message}`);
-                }
-                app.quit();
-                break;
-                
-            case '--squirrel-uninstall':
-                // Log uninstallation
-                logger.logInstallation({
-                    event: 'uninstall',
-                    installPath: app.getAppPath()
-                });
-                app.quit();
-                break;
-                
-            case '--squirrel-obsolete':
-                // Log obsolete event
-                logger.logInstallation({
-                    event: 'obsolete',
-                    installPath: app.getAppPath()
-                });
-                app.quit();
-                break;
-        }
-    }
-}
+const { performTraceroute } = require('./common/traceroute');
+
+const TRACEROUTE_TARGETS = ['yom.network', '8.8.8.8']; // Default configurable targets
 
 // Import platform detector
 const { detectPlatformDetailed } = require('./platforms/platform-detector');
@@ -141,47 +90,8 @@ async function setupFirstRun() {
         logger.info('Not first run, skipping setup tasks');
     }
     
-    // Check for desktop shortcut
-    if (process.platform === 'win32') {
-        try {
-            const desktopPath = path.join(app.getPath('desktop'), 'YOM Node Inspector.lnk');
-            const shortcutExists = fs.existsSync(desktopPath);
-            
-            logger.info(`Checking desktop shortcut: ${desktopPath}`);
-            logger.info(`Desktop shortcut exists: ${shortcutExists}`);
-            
-            if (!shortcutExists) {
-                logger.warn('Desktop shortcut not found, attempting to create');
-                
-                // Try to create it manually if missing
-                try {
-                    const updateExe = path.join(path.dirname(app.getPath('exe')), '..', 'Update.exe');
-                    const target = path.basename(process.execPath);
-                    
-                    require('child_process').spawn(updateExe, [
-                        '--createShortcut=' + target,
-                        '--shortcut-locations=Desktop,StartMenu'
-                    ], { detached: true });
-                    
-                    logger.info('Manually created shortcuts during first run');
-                    
-                    logger.logInstallation({
-                        event: 'shortcut-created-manually',
-                        desktopShortcut: desktopPath
-                    });
-                } catch (error) {
-                    logger.error(`Failed to create desktop shortcut: ${error.message}`);
-                    
-                    logger.logInstallation({
-                        event: 'shortcut-creation-failed',
-                        error: error.message
-                    });
-                }
-            }
-        } catch (error) {
-            logger.error(`Error checking desktop shortcut: ${error.message}`);
-        }
-    }
+    // Desktop shortcuts are now handled by the WiX installer.
+    // The Squirrel specific shortcut creation logic has been removed.
 }
 
 /**
@@ -194,31 +104,43 @@ async function findUpnpcPath() {
     const possiblePaths = [];
     
     if (app.isPackaged) {
-        const appPath = app.getAppPath();
-        const appDir = path.dirname(appPath);
-        
-        // PRIMARY: Check extraResource location (this is where it's actually placed and EXECUTABLE!)
-        // FIXED: removed duplicate 'resources' folder
-        possiblePaths.push(path.join(appDir, 'resources', 'upnpc-static.exe'));
-        
-        // SECONDARY: Alternative packaged locations
+        const appPath = app.getAppPath(); // Typically [INSTALL_DIR]/resources/app.asar
+        const resourcesDir = path.dirname(appPath); // Typically [INSTALL_DIR]/resources
+
+        // HIGHEST PRIORITY for packaged apps:
+        // Expected location for `extraResource` files like `upnpc-static.exe` when installed.
+        // e.g., [INSTALL_DIR]/resources/upnpc-static.exe (if app.asar is in [INSTALL_DIR]/resources)
+        // or [INSTALL_DIR]/upnpc-static.exe (if app.asar is in [INSTALL_DIR]) - needs verification based on actual build output
+        // For electron-forge, extraResources are usually copied next to the unpacked app.asar, so path.dirname(app.getAppPath()) should be correct.
+        possiblePaths.push(path.join(resourcesDir, 'upnpc-static.exe'));
+        logger.debug(`Packaged: Adding primary path: ${path.join(resourcesDir, 'upnpc-static.exe')}`);
+
+        // Secondary path for packaged apps (less common for extraResource)
+        // This might point to [INSTALL_DIR]/upnpc-static.exe if app.asar is in [INSTALL_DIR]/resources
         possiblePaths.push(path.join(appPath, '..', 'upnpc-static.exe'));
+        logger.debug(`Packaged: Adding secondary path: ${path.join(appPath, '..', 'upnpc-static.exe')}`);
         
-        // TERTIARY: Check unpacked ASAR location (if using asar unpack)
-        possiblePaths.push(path.join(appDir, 'resources', 'app.asar.unpacked', 'resources', 'upnpc-static.exe'));
-        possiblePaths.push(path.join(appPath, '..', 'app.asar.unpacked', 'resources', 'upnpc-static.exe'));
+        // Fallback for asar unpacked scenarios
+        possiblePaths.push(path.join(resourcesDir, 'app.asar.unpacked', 'resources', 'upnpc-static.exe'));
+        logger.debug(`Packaged: Adding ASAR unpacked path: ${path.join(resourcesDir, 'app.asar.unpacked', 'resources', 'upnpc-static.exe')}`);
+
+    } else {
+        // Development path - Highest priority when not packaged
+        possiblePaths.push(path.join(__dirname, 'resources', 'upnpc-static.exe'));
+        logger.debug(`Development: Adding primary path: ${path.join(__dirname, 'resources', 'upnpc-static.exe')}`);
         
-        // NOTE: We deliberately DO NOT include app.asar paths because executables there cannot be run
+        // Another common dev path (if resources is sibling to main.js but not in __dirname)
+        possiblePaths.push(path.join(app.getAppPath(), 'resources', 'upnpc-static.exe'));
+        logger.debug(`Development: Adding secondary path: ${path.join(app.getAppPath(), 'resources', 'upnpc-static.exe')}`);
     }
     
-    // Development and fallback paths
-    possiblePaths.push(
-        path.join(app.getAppPath(), 'resources', 'upnpc-static.exe'),
-        path.join(__dirname, 'resources', 'upnpc-static.exe'),
-        path.join(process.env.ProgramFiles || '', 'YOM', 'YOM Node Inspector', 'resources', 'upnpc-static.exe'),
-        path.join(process.env['ProgramFiles(x86)'] || '', 'YOM', 'YOM Node Inspector', 'resources', 'upnpc-static.exe'),
-        path.join(app.getPath('userData'), 'resources', 'upnpc-static.exe')
-    );
+    // User data path - Fallback for both packaged and development, if copied there by setupFirstRun or other logic
+    possiblePaths.push(path.join(app.getPath('userData'), 'resources', 'upnpc-static.exe'));
+    logger.debug(`Fallback: Adding user data path: ${path.join(app.getPath('userData'), 'resources', 'upnpc-static.exe')}`);
+
+    // Commenting out Program Files paths as they are less predictable with WiX user-configurable installation
+    // possiblePaths.push(path.join(process.env.ProgramFiles || '', 'YOM', 'YOM Node Inspector', 'resources', 'upnpc-static.exe'));
+    // possiblePaths.push(path.join(process.env['ProgramFiles(x86)'] || '', 'YOM', 'YOM Node Inspector', 'resources', 'upnpc-static.exe'));
     
     logger.debug(`Searching for upnpc-static.exe in ${possiblePaths.length} possible locations`);
     
@@ -382,18 +304,33 @@ function setupIpcHandlers() {
     // Platform-specific handlers
     ipcMain.handle('check-upnp-comprehensive', async () => {
         logger.info('Handling check-upnp-comprehensive request');
-        return await platformChecks.checkUPnPComprehensive();
+        try {
+            return await platformChecks.checkUPnPComprehensive();
+        } catch (error) {
+            logger.error(`Error in 'check-upnp-comprehensive' handler: ${error.message}`, { stack: error.stack });
+            throw new Error(`Failed to perform comprehensive UPnP check: ${error.message}`);
+        }
     });
     
     ipcMain.handle('check-partition-style', async () => {
         logger.info('Handling check-partition-style request');
-        return await platformChecks.checkPartitionStyle();
+        try {
+            return await platformChecks.checkPartitionStyle();
+        } catch (error) {
+            logger.error(`Error in 'check-partition-style' handler: ${error.message}`, { stack: error.stack });
+            throw new Error(`Failed to check partition style: ${error.message}`);
+        }
     });
     
     // Common handlers
     ipcMain.handle('get-gpu-info', async () => {
         logger.info('Handling get-gpu-info request');
-        return await systemInfo.getGPUInfo();
+        try {
+            return await systemInfo.getGPUInfo();
+        } catch (error) {
+            logger.error(`Error in 'get-gpu-info' handler: ${error.message}`, { stack: error.stack });
+            throw new Error(`Failed to get GPU information: ${error.message}`);
+        }
     });
 
 
@@ -404,23 +341,40 @@ function setupIpcHandlers() {
     
     ipcMain.handle('get-os-info', async () => {
         logger.info('Handling get-os-info request');
-        return await systemInfo.getOSInfo();
+        try {
+            return await systemInfo.getOSInfo();
+        } catch (error) {
+            logger.error(`Error in 'get-os-info' handler: ${error.message}`, { stack: error.stack });
+            throw new Error(`Failed to get OS information: ${error.message}`);
+        }
     });
     
     ipcMain.handle('get-system-info', async () => {
         logger.info('Handling get-system-info request');
-        return await systemInfo.getSystemInfo();
+        try {
+            return await systemInfo.getSystemInfo();
+        } catch (error) {
+            logger.error(`Error in 'get-system-info' handler: ${error.message}`, { stack: error.stack });
+            throw new Error(`Failed to get system information: ${error.message}`);
+        }
     });
     
     // Path configuration handlers
     ipcMain.handle('get-app-paths', () => {
         logger.info('Handling get-app-paths request');
-        return {
-            appPath: app.getAppPath(),
-            userData: app.getPath('userData'),
-            temp: app.getPath('temp'),
-            upnpc: findUpnpcPath()
-        };
+        try {
+            return {
+                appPath: app.getAppPath(),
+                userData: app.getPath('userData'),
+                temp: app.getPath('temp'),
+                upnpc: findUpnpcPath() // findUpnpcPath itself has logging
+            };
+        } catch (error) {
+            logger.error(`Error in 'get-app-paths' handler: ${error.message}`, { stack: error.stack });
+            // For synchronous handlers, we might need to return a structure or rethrow.
+            // Since this one is simple, rethrowing is fine and will be caught by Electron.
+            throw new Error(`Failed to get application paths: ${error.message}`);
+        }
     });
     
     // Email reporting
@@ -441,29 +395,86 @@ function setupIpcHandlers() {
     // Installation info
     ipcMain.handle('get-installation-info', () => {
         logger.info('Handling get-installation-info request');
-        
-        const installInfo = {
-            appPath: app.getAppPath(),
-            userData: app.getPath('userData'),
-            version: app.getVersion(),
-            exePath: app.getPath('exe'),
-            shortcutPath: path.join(app.getPath('desktop'), 'YOM Node Inspector.lnk'),
-            shortcutExists: false
-        };
-        
         try {
-            installInfo.shortcutExists = fs.existsSync(installInfo.shortcutPath);
+            const shortcutPath = path.join(app.getPath('desktop'), 'YOM Node Inspector.lnk');
+            let shortcutExists = false;
+            try {
+                shortcutExists = fs.existsSync(shortcutPath);
+            } catch (fsError) {
+                logger.warn(`Could not determine if shortcut exists at ${shortcutPath}: ${fsError.message}`);
+                // Keep shortcutExists as false
+            }
+
+            return {
+                appPath: app.getAppPath(),
+                userData: app.getPath('userData'),
+                version: app.getVersion(),
+                exePath: app.getPath('exe'),
+                shortcutPath: shortcutPath,
+                shortcutExists: shortcutExists
+            };
         } catch (error) {
-            logger.error(`Error checking shortcut: ${error.message}`);
+            logger.error(`Error in 'get-installation-info' handler: ${error.message}`, { stack: error.stack });
+            throw new Error(`Failed to get installation information: ${error.message}`);
         }
-        
-        return installInfo;
     });
 
     
     
     // Legacy handlers for backward compatibility
     setupLegacyHandlers();
+
+    ipcMain.handle('get-traceroute-targets', async () => {
+      // Ensure logger is accessible here or remove logger call if it causes issues in subtask
+      // logger.info('Providing traceroute targets to renderer.');
+      console.log('Main process: Providing traceroute targets to renderer.'); // Using console.log for subtask simplicity
+      return TRACEROUTE_TARGETS;
+    });
+
+    ipcMain.handle('perform-traceroute', async (event, host) => {
+      logger.info(`Handling perform-traceroute request for host: ${host}`);
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        logger.error('Cannot perform traceroute, mainWindow is not available.');
+        return { success: false, error: 'Main window not available.' };
+      }
+
+      try {
+        performTraceroute(host, {
+          onPid: (pid) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('traceroute-pid', { host, pid });
+            }
+          },
+          onDestination: (destination) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('traceroute-destination', { host, destination });
+            }
+          },
+          onHop: (hop) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('traceroute-hop', { host, hop });
+            }
+          },
+          onClose: (code) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('traceroute-close', { host, code });
+            }
+          },
+          onError: (err) => {
+            // This error comes from the traceroute library itself (e.g. process error, parsing error)
+            logger.error(`Error during traceroute for ${host}: ${err.message}`);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('traceroute-error', { host, error: { message: err.message } });
+            }
+          }
+        });
+        return { success: true, message: `Traceroute to ${host} initiated.` };
+      } catch (initError) {
+        // This error is if performTraceroute itself throws an error synchronously during setup
+        logger.error(`Failed to initiate traceroute for ${host} in main.js: ${initError.message}`);
+        return { success: false, error: `Failed to initiate traceroute: ${initError.message}` };
+      }
+    });
     
     logger.info('All IPC handlers set up successfully');
 }
@@ -486,7 +497,10 @@ function setupLegacyHandlers() {
         }
         
         try {
-            return await platformChecks.checkUPnPComprehensive();
+            const result = await platformChecks.checkUPnPComprehensive();
+            // Ensure a consistent return structure even on success, if desired, or just return result.
+            // For this legacy handler, existing structure is fine.
+            return result;
         } catch (error) {
             logger.error(`Legacy UPnP check failed: ${error.message}`, { stack: error.stack });
             try {
@@ -494,7 +508,8 @@ function setupLegacyHandlers() {
             } catch (logError) {
                 logger.warn(`Could not write error to UPnP debug log: ${logError.message}`);
             }
-            return { enabled: false, error: error.message };
+            // Return a consistent error structure that the renderer might expect
+            return { enabled: false, error: `Legacy UPnP check failed: ${error.message}` };
         }
     });
 }
