@@ -1,0 +1,44 @@
+Build started at 2025-04-26T11:10:50.870Z
+Package created at 2025-04-26T11:10:58.416Z
+Output paths: C:\Users\Dirk\Documents\node-checker\out\yom-node-inspector-win32-x64
+Make completed at 2025-04-26T11:12:33.757Z
+Created 2 artifacts:
+- undefined for win32-x64
+  Artifacts: C:\Users\Dirk\Documents\node-checker\out\make\zip\win32\x64\yom-node-inspector-win32-x64-1.0.0.zip
+- undefined for win32-x64
+  Artifacts: C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\RELEASES, C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\YOM-Node-Inspector-Setup.exe, C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\YOMNodeInspector-1.0.0-full.nupkg
+Build started at 2025-04-27T13:49:09.267Z
+Package created at 2025-04-27T13:49:16.530Z
+Output paths: C:\Users\Dirk\Documents\node-checker\out\yom-node-inspector-win32-x64
+Make completed at 2025-04-27T13:51:00.295Z
+Created 2 artifacts:
+- undefined for win32-x64
+  Artifacts: C:\Users\Dirk\Documents\node-checker\out\make\zip\win32\x64\yom-node-inspector-win32-x64-1.0.0.zip
+- undefined for win32-x64
+  Artifacts: C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\RELEASES, C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\YOM-Node-Inspector-Setup.exe, C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\YOMNodeInspector-1.0.0-full.nupkg
+Build started at 2025-05-28T09:18:35.907Z
+Build started at 2025-05-28T09:23:29.134Z
+Package created at 2025-05-28T09:23:36.224Z
+Output paths: C:\Users\Dirk\Documents\node-checker\out\yom-node-inspector-win32-x64
+UPnP tool unpacked: false
+Make completed at 2025-05-28T09:25:08.988Z
+Created 2 artifacts:
+- undefined for win32-x64
+  Artifacts: C:\Users\Dirk\Documents\node-checker\out\make\zip\win32\x64\yom-node-inspector-win32-x64-1.0.0.zip
+- undefined for win32-x64
+  Artifacts: C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\RELEASES, C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\YOM-Node-Inspector-Setup.exe, C:\Users\Dirk\Documents\node-checker\out\make\squirrel.windows\x64\YOMNodeInspector-1.0.0-full.nupkg
+Build started at 2025-05-28T09:56:05.605Z
+Build started at 2025-05-28T09:56:17.052Z
+Build started at 2025-05-28T10:54:03.441Z
+Build started at 2025-05-28T10:54:49.594Z
+Build started at 2025-05-28T10:56:43.332Z
+Package created at 2025-05-28T10:56:50.401Z
+Output paths: C:\Users\Dirk\Documents\node-checker\out\yom-node-inspector-win32-x64
+ExtraResource exe exists: true
+Build started at 2025-05-28T11:26:27.394Z
+Build started at 2025-05-28T11:26:56.760Z
+Build started at 2025-05-28T11:28:53.459Z
+Build started at 2025-05-28T11:30:19.412Z
+Package created at 2025-05-28T11:30:25.990Z
+Output paths: C:\Users\Dirk\Documents\node-checker\out\yom-node-inspector-win32-x64
+ExtraResource exe exists: true
