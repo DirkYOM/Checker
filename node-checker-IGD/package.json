@@ -21,7 +21,8 @@
     "systeminformation": "^5.25.3",
     "winston": "^3.11.0",
     "nodemailer": "^6.9.9",
-    "nodejs-traceroute": "^2.0.1"
+    "nodejs-traceroute": "^2.0.1",
+    "nat-upnp": "^1.2.1"
   },
   "devDependencies": {
   "@electron-forge/cli": "^7.6.0",

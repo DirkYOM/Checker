@@ -9,7 +9,7 @@ module.exports = {
       unpack: '**/{upnpc-static.exe}'  // Unpack the executable from ASAR
     },
     icon: path.join(__dirname, 'assets', 'yom-icon'),
-    executableName: 'YOM-Node-Inspector',
+    executableName: 'yom-node-inspector',
     extraResource: [
       // This places the file in resources/ directory outside of ASAR
       path.join(__dirname, 'resources', 'upnpc-static.exe')
@@ -25,7 +25,7 @@ module.exports = {
         name: 'YOM-Node-Inspector', // From existing packagerConfig.executableName or Squirrel config
         manufacturer: 'YOM', // From existing Squirrel config
         description: 'YOM Node Inspector app', // From package.json or existing Squirrel config
-        exe: 'YOM-Node-Inspector.exe', // From packagerConfig.executableName
+        exe: 'yom-node-inspector.exe', // From packagerConfig.executableName
         icon: path.join(__dirname, 'assets', 'yom-icon.ico'), // From packagerConfig.icon
         language: 1033, // English - United States
         ui: {

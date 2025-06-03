@@ -274,7 +274,17 @@ async function checkUPnPWithLibraryLinux() {
         result.details.error = error.message;
         return result;
     } finally {
-        if (client) client.close();
+        if (client) {
+            try {
+                logger.debug('Attempting to close nat-upnp client.');
+                client.close();
+                logger.debug('nat-upnp client closed successfully.');
+            } catch (closeError) {
+                logger.warn(`Error while closing nat-upnp client (this might be expected if discovery failed or client was not properly initialized): ${closeError.message}`);
+                // Optionally log closeError.stack if more detail is needed for debugging,
+                // but avoid letting this error propagate and crash the main UPnP check.
+            }
+        }
     }
 }
 
